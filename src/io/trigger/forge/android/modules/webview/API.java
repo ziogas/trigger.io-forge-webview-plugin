@@ -5,14 +5,16 @@ import io.trigger.forge.android.core.ForgeParam;
 import io.trigger.forge.android.core.ForgeTask;
 import android.annotation.TargetApi;
 import android.os.Build;
+import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.RelativeLayout;
 
 public class API {
 	
-	static RelativeLayout mOverlay;
-	static WebView mWebView;
+	static RelativeLayout mOverlay = null;
+	static WebView mWebView = null;
+	static Boolean mClearHistory = false;
 
 	@TargetApi(Build.VERSION_CODES.GINGERBREAD)
 	public static void show(final ForgeTask task, @ForgeParam("url") final String url, @ForgeParam("padding_top") final int padding_top, @ForgeParam("padding_bottom") final int padding_bottom ) {
@@ -25,25 +27,42 @@ public class API {
 		task.performUI(new Runnable() {
 			public void run() {
 				
-				//Set overlay
-				mOverlay = new RelativeLayout(ForgeApp.getActivity());
-				mOverlay.setPadding(0, padding_top, 0, padding_bottom);
+				float scale = ForgeApp.getActivity().getResources().getDisplayMetrics().density; 
 				
-				//Set our new webview
-				mWebView = new WebView(ForgeApp.getActivity().getApplicationContext());
-				mWebView.getSettings().setJavaScriptEnabled(true);
+				if ( mOverlay == null || mWebView == null ) {
+					
+					//Set overlay
+					mOverlay = new RelativeLayout(ForgeApp.getActivity());
+					
+					//Set our new webview
+					mWebView = new WebView(ForgeApp.getActivity().getApplicationContext());
+					mWebView.getSettings().setJavaScriptEnabled(true);
+					
+					mWebView.setWebViewClient(new WebViewClient() {
+					    public boolean shouldOverrideUrlLoading(WebView view, String url){
+					        view.loadUrl(url);
+					        return false; // prevents the default action - opening in system browser
+					    }
+					});
+					
+					mWebView.setWebChromeClient(new WebChromeClient() {
+						public void onProgressChanged(WebView view, int progress) {
+					        if ( progress == 100 && mClearHistory ) {
+					            view.clearHistory();
+					            mClearHistory = false;
+					        }
+					    }
+					});
+					
+					//Add webview to overlay and overlay to current app
+					mOverlay.addView (mWebView);
+					ForgeApp.getActivity().addModalView(mOverlay);
+				}
 				
-				//Fix some things
-				mWebView.setWebViewClient(new WebViewClient() {
-				    public boolean shouldOverrideUrlLoading(WebView view, String url){
-				        view.loadUrl(url);
-				        return false; // prevents the default action - opening in system browser
-				    }
-				});
-				
-				//Add webview to overlay and overlay to current app
-				mOverlay.addView (mWebView);
-				ForgeApp.getActivity().addModalView(mOverlay);
+				mOverlay.setPadding(0, (int) (padding_top*scale + 0.5f), 0, (int) (padding_bottom*scale + 0.5f));
+				mWebView.clearAnimation();
+				mWebView.clearView();
+				mClearHistory = true;
 				
 				//Fire it
 				mWebView.loadUrl(url);
@@ -74,9 +93,11 @@ public class API {
 	}
 	
 	public static void _close (final ForgeTask task) {
+		
 		task.performUI(new Runnable() {
 			public void run() {
 				
+				ForgeApp.event("webview.before_close", null);
 		    	ForgeApp.getActivity().removeModalView(mOverlay, new Runnable() {
 					public void run() {
 						ForgeApp.event("webview.closed", null);
